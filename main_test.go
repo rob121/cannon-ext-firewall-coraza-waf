@@ -55,7 +55,11 @@ func TestIsBannedRechecksDBAfterMemoHit(t *testing.T) {
 	if _, ok := app.banMemo.Load("1.2.3.4"); ok {
 		t.Fatal("expected memo cleared")
 	}
-	// With a live row, memo + DB agree.
+	if _, ok := app.banNegative.Load("1.2.3.4"); !ok {
+		t.Fatal("expected negative cache after clean disk recheck")
+	}
+	// Clear negative cache so a newly written ban is visible immediately.
+	app.banNegative.Delete("1.2.3.4")
 	if err := db.Table(app.bansTable).Create(&banRow{
 		IP:        "1.2.3.4",
 		Reason:    "test",
@@ -70,6 +74,16 @@ func TestIsBannedRechecksDBAfterMemoHit(t *testing.T) {
 	}
 	if until.IsZero() {
 		t.Fatal("expected expiry")
+	}
+}
+
+func TestIsBannedNegativeCacheSkipsDisk(t *testing.T) {
+	app := &firewallApp{bansTable: "firewall_coraza_waf_bans"}
+	// Force fail if disk were consulted (no testDB / wafDB).
+	app.banNegative.Store("9.9.9.9", time.Now().Add(banNegativeTTL).Unix())
+	banned, _ := app.isBanned("9.9.9.9")
+	if banned {
+		t.Fatal("expected not banned from negative cache")
 	}
 }
 
@@ -120,6 +134,8 @@ func TestFirewallConfigSchemaDefaultsMatchCode(t *testing.T) {
 		`"default":true`,
 		`"default":131072`,
 		d.BlockMessage,
+		"/theme",
+		"/assets",
 	} {
 		if !strings.Contains(raw, want) {
 			t.Fatalf("schema missing %q in %s", want, raw)
@@ -129,18 +145,85 @@ func TestFirewallConfigSchemaDefaultsMatchCode(t *testing.T) {
 		d.InboundAnomalyThreshold != 5 || d.OutboundAnomalyThreshold != 4 || !d.ExcludeAdmin || d.MaxBodyBytes != 131072 {
 		t.Fatalf("unexpected code defaults: %+v", d)
 	}
+	if d.ExcludePaths != defaultExcludePaths {
+		t.Fatalf("ExcludePaths default = %q", d.ExcludePaths)
+	}
 }
 
 func TestShouldSkipPath(t *testing.T) {
-	cfg := firewallSettings{ExcludeAdmin: true, ExcludePaths: "/theme\n/assets"}.normalized()
+	cfg := defaultFirewallSettings().normalized()
 	if !shouldSkipPath(cfg, "/admin/users") {
 		t.Fatal("expected admin skip")
 	}
 	if !shouldSkipPath(cfg, "/theme/site.css") {
 		t.Fatal("expected theme skip")
 	}
+	if !shouldSkipPath(cfg, "/static/app.js") {
+		t.Fatal("expected static skip")
+	}
 	if shouldSkipPath(cfg, "/blog") {
 		t.Fatal("blog should not skip")
+	}
+}
+
+func TestIsResponseCRSFile(t *testing.T) {
+	if !isResponseCRSFile("@owasp_crs/RESPONSE-950-DATA-LEAKAGES.conf") {
+		t.Fatal("expected RESPONSE pack")
+	}
+	if isResponseCRSFile("@owasp_crs/REQUEST-942-APPLICATION-ATTACK-SQLI.conf") {
+		t.Fatal("REQUEST pack should not be response")
+	}
+}
+
+func TestPreloadCRSDisablesResponsePacks(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:preload_resp?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &firewallApp{
+		settingsTable: "firewall_coraza_waf_settings",
+		rulesTable:    "firewall_coraza_waf_rules",
+		eventsTable:   "firewall_coraza_waf_events",
+		bansTable:     "firewall_coraza_waf_bans",
+		testDB:        db,
+	}
+	// Seed a RESPONSE pack that was incorrectly enabled by an older preload.
+	if err := app.migrateTables(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table(app.rulesTable).Create(&ruleRow{
+		Kind:    ruleKindFile,
+		Key:     "@owasp_crs/RESPONSE-950-DATA-LEAKAGES.conf",
+		Title:   "RESPONSE-950-DATA-LEAKAGES",
+		Enabled: true,
+		Sort:    1,
+		Source:  "crs",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.preloadCRS(); err != nil {
+		t.Fatal(err)
+	}
+	var rows []ruleRow
+	if err := db.Table(app.rulesTable).Where("kind = ?", ruleKindFile).Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	var sawResp, sawReq bool
+	for _, r := range rows {
+		if isResponseCRSFile(r.Key) {
+			sawResp = true
+			if r.Enabled {
+				t.Fatalf("RESPONSE pack still enabled: %s", r.Key)
+			}
+		} else if strings.Contains(r.Key, "REQUEST-") && r.Enabled {
+			sawReq = true
+		}
+	}
+	if !sawResp {
+		t.Fatal("expected RESPONSE packs after preload")
+	}
+	if !sawReq {
+		t.Fatal("expected enabled REQUEST packs after preload")
 	}
 }
 

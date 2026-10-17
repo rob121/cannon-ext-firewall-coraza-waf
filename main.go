@@ -27,14 +27,11 @@ const (
 	extensionName        = "cannon-ext-firewall-coraza-waf"
 	extensionTitle       = "Coraza WAF"
 	extensionDescription = "OWASP Coraza web application firewall with CRS v4, admin rule management, IP bans, and passthru mode."
-	extensionVersion     = "0.2.0"
+	extensionVersion     = "0.2.1"
 	updateURLBase        = "https://github.com/rob121/cannon-ext-firewall-coraza-waf/releases/download"
 	defaultAdminMenu     = "Firewall"
 	pageSize             = 25
 )
-
-// excludePathsPlaceholder is UI-only (empty string remains the runtime default).
-const excludePathsPlaceholder = "/theme\n/assets\n/webhooks/"
 
 func firewallConfigSchema() json.RawMessage {
 	d := defaultFirewallSettings()
@@ -44,7 +41,7 @@ func firewallConfigSchema() json.RawMessage {
 			"mode": map[string]any{
 				"type":        "string",
 				"title":       "Mode",
-				"description": "disabled skips inspection. passthru logs what would block but allows the request. enforce blocks and may ban.",
+				"description": "disabled skips inspection. passthru logs what would block but allows the request. enforce runs full CRS on every non-excluded request (CPU-heavy; use after tuning in passthru, preferably at the edge).",
 				"enum":        []string{"disabled", "passthru", "enforce"},
 				"default":     d.Mode,
 			},
@@ -100,8 +97,8 @@ func firewallConfigSchema() json.RawMessage {
 			"exclude_paths": map[string]any{
 				"type":        "string",
 				"title":       "Excluded Path Prefixes",
-				"description": "One path prefix per line. Matched with HasPrefix. Empty means no extra excludes.",
-				"default":     excludePathsPlaceholder,
+				"description": "One path prefix per line (HasPrefix). Defaults skip theme/static assets so CRS is not paid on every CSS/JS hit.",
+				"default":     d.ExcludePaths,
 			},
 			"max_body_bytes": map[string]any{
 				"type":        "integer",
@@ -157,7 +154,8 @@ type firewallApp struct {
 
 	mu              sync.RWMutex
 	engine          *wafEngine
-	banMemo         sync.Map // ip -> unix expiry
+	banMemo         sync.Map // ip -> unix expiry (active ban)
+	banNegative     sync.Map // ip -> unix until which "not banned" is trusted
 	banRecheckAt    sync.Map // ip -> unix last disk recheck
 	bannedLogAt     sync.Map // ip -> unix last banned event log
 	lastRetentionAt time.Time

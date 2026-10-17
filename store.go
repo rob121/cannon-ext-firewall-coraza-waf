@@ -111,6 +111,9 @@ func (app *firewallApp) migrateTables(db *gorm.DB) error {
 	return db.Table(app.rulesTable).AutoMigrate(&ruleRow{})
 }
 
+// defaultExcludePaths skips static/theme traffic that should not pay CRS cost.
+const defaultExcludePaths = "/theme\n/assets\n/static\n/media\n/uploads\n/favicon.ico\n/robots.txt"
+
 func defaultFirewallSettings() firewallSettings {
 	return firewallSettings{
 		Mode:                     "passthru",
@@ -121,6 +124,7 @@ func defaultFirewallSettings() firewallSettings {
 		InboundAnomalyThreshold:  5,
 		OutboundAnomalyThreshold: 4,
 		ExcludeAdmin:             true,
+		ExcludePaths:             defaultExcludePaths,
 		MaxBodyBytes:             131072,
 		EventRetentionDays:       30,
 	}

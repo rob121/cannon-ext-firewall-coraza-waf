@@ -7,16 +7,29 @@ import (
 	"gorm.io/gorm"
 )
 
+const banNegativeTTL = 30 * time.Second
+
 func (app *firewallApp) isBanned(ip string) (bool, time.Time) {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
 		return false, time.Time{}
 	}
 	now := time.Now().Unix()
+
+	// Negative cache: recently confirmed not banned — skip disk.
+	if v, ok := app.banNegative.Load(ip); ok {
+		until, _ := v.(int64)
+		if until > now {
+			return false, time.Time{}
+		}
+		app.banNegative.Delete(ip)
+	}
+
 	if v, ok := app.banMemo.Load(ip); ok {
 		exp, _ := v.(int64)
 		if exp <= now {
 			app.banMemo.Delete(ip)
+			app.rememberNotBanned(ip)
 			return false, time.Time{}
 		}
 		// Trust memory on the hot path; periodically recheck disk so CLI unban works.
@@ -26,6 +39,10 @@ func (app *firewallApp) isBanned(ip string) (bool, time.Time) {
 		return true, time.Unix(exp, 0).UTC()
 	}
 	return app.recheckBanOnDisk(ip)
+}
+
+func (app *firewallApp) rememberNotBanned(ip string) {
+	app.banNegative.Store(ip, time.Now().Add(banNegativeTTL).Unix())
 }
 
 func (app *firewallApp) shouldRecheckBan(ip string, now int64) bool {
@@ -47,14 +64,17 @@ func (app *firewallApp) recheckBanOnDisk(ip string) (bool, time.Time) {
 				return true, time.Unix(exp, 0).UTC()
 			}
 		}
+		// Fail open without poisoning negative cache when disk is unavailable.
 		return false, time.Time{}
 	}
 	var row banRow
 	err = db.Table(app.bansTable).Where("ip = ? AND expires_at > ?", ip, time.Now().UTC()).First(&row).Error
 	if err != nil {
 		app.banMemo.Delete(ip)
+		app.rememberNotBanned(ip)
 		return false, time.Time{}
 	}
+	app.banNegative.Delete(ip)
 	app.banMemo.Store(ip, row.ExpiresAt.Unix())
 	return true, row.ExpiresAt.UTC()
 }
@@ -65,6 +85,7 @@ func (app *firewallApp) banIP(ip, reason string, seconds int) {
 		return
 	}
 	exp := time.Now().UTC().Add(time.Duration(seconds) * time.Second)
+	app.banNegative.Delete(ip)
 	app.banMemo.Store(ip, exp.Unix())
 	go app.persistBan(ip, reason, exp)
 }
@@ -96,6 +117,7 @@ func (app *firewallApp) unbanIP(ip string) error {
 	ip = strings.TrimSpace(ip)
 	app.banMemo.Delete(ip)
 	app.banRecheckAt.Delete(ip)
+	app.banNegative.Delete(ip)
 	db, err := app.wafDB()
 	if err != nil {
 		return err

@@ -136,10 +136,7 @@ func (app *firewallApp) blockResponse(cfg firewallSettings, message string) exte
 
 func inspectRequest(eng *wafEngine, method, rawURL string, header map[string][]string, body, clientIP string) inspectResult {
 	tx := eng.waf.NewTransaction()
-	defer func() {
-		tx.ProcessLogging()
-		tx.Close()
-	}()
+	defer tx.Close()
 
 	if clientIP == "" {
 		clientIP = "0.0.0.0"
@@ -193,11 +190,14 @@ func inspectRequest(eng *wafEngine, method, rawURL string, header map[string][]s
 	}
 
 	out := inspectResult{}
-	if it != nil {
-		out.Interrupted = true
-		out.Status = it.Status
-		out.Action = fmt.Sprint(it.Action)
+	if it == nil {
+		// Clean request: skip MatchedRules walk and ProcessLogging (audit unused).
+		return out
 	}
+	out.Interrupted = true
+	out.Status = it.Status
+	out.Action = fmt.Sprint(it.Action)
+
 	seen := map[int]struct{}{}
 	for _, mr := range tx.MatchedRules() {
 		id := mr.Rule().ID()
@@ -209,9 +209,6 @@ func inspectRequest(eng *wafEngine, method, rawURL string, header map[string][]s
 			continue
 		}
 		msg := strings.TrimSpace(mr.Message())
-		if msg == "" && !out.Interrupted {
-			continue
-		}
 		if _, ok := seen[id]; ok {
 			continue
 		}

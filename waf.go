@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/corazawaf/coraza/v3"
 	corazaconf "github.com/corazawaf/coraza-coreruleset/coraza/v3"
@@ -48,6 +49,12 @@ func listCRSFiles() ([]string, error) {
 	})
 	sort.Strings(files)
 	return files, err
+}
+
+// isResponseCRSFile reports RESPONSE-* packs. They are unused (inspection never
+// processes the response body) and are disabled by default on preload.
+func isResponseCRSFile(key string) bool {
+	return strings.HasPrefix(path.Base(key), "RESPONSE-")
 }
 
 func (app *firewallApp) rebuildEngine() error {
@@ -169,11 +176,13 @@ func (app *firewallApp) preloadCRS() (int, error) {
 	n := 0
 	for i, key := range files {
 		title := strings.TrimSuffix(path.Base(key), ".conf")
+		// RESPONSE packs are not used on the request-only path; default off.
+		enabled := !isResponseCRSFile(key)
 		row := ruleRow{
 			Kind:    ruleKindFile,
 			Key:     key,
 			Title:   title,
-			Enabled: true,
+			Enabled: enabled,
 			Sort:    i + 1,
 			Source:  "crs",
 		}
@@ -183,12 +192,28 @@ func (app *firewallApp) preloadCRS() (int, error) {
 			existing.Title = row.Title
 			existing.Sort = row.Sort
 			existing.Source = "crs"
-			// Keep Enabled as the admin left it.
+			// Keep Enabled as the admin left it for REQUEST; force RESPONSE off
+			// so upgrades drop unused packs that previously defaulted to on.
+			if isResponseCRSFile(key) {
+				existing.Enabled = false
+			}
 			if err := db.Table(app.rulesTable).Save(&existing).Error; err != nil {
 				return n, err
 			}
 		} else {
-			if err := db.Table(app.rulesTable).Create(&row).Error; err != nil {
+			// Map create so Enabled:false is persisted (GORM skips bool zero with default:true).
+			now := time.Now().UTC()
+			if err := db.Table(app.rulesTable).Create(map[string]any{
+				"kind":       row.Kind,
+				"rule_key":   row.Key,
+				"title":      row.Title,
+				"directives": row.Directives,
+				"enabled":    enabled,
+				"sort":       row.Sort,
+				"source":     row.Source,
+				"created_at": now,
+				"updated_at": now,
+			}).Error; err != nil {
 				return n, err
 			}
 		}
