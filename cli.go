@@ -6,12 +6,10 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/rob121/cannon/extension"
 )
 
 func bansTableName() string {
-	return extension.TableName(extension.TablePrefixFromName(extensionName), "bans")
+	return "firewall_coraza_waf_bans"
 }
 
 func runCLI(cmd string, args []string) error {
@@ -35,7 +33,6 @@ func ensureSiteFlag(site string) {
 			return
 		}
 	}
-	// OpenDB only recognizes --site=; accept "--site value" from flag parsing.
 	os.Args = append(os.Args, "--site="+site)
 }
 
@@ -50,11 +47,16 @@ func cliListBans(args []string) error {
 		return fmt.Errorf("list-bans: --site is required")
 	}
 	ensureSiteFlag(*site)
-	db, _, err := extension.OpenDB()
+	path, err := wafStorePath()
+	if err != nil {
+		return err
+	}
+	db, err := openWafSQLite(path)
 	if err != nil {
 		return err
 	}
 	table := bansTableName()
+	_ = db.Table(table).AutoMigrate(&banRow{})
 	var rows []banRow
 	err = db.Table(table).
 		Where("expires_at > ?", time.Now().UTC()).
@@ -93,11 +95,16 @@ func cliUnban(args []string) error {
 		return fmt.Errorf("unban: use either --ip or --all, not both")
 	}
 	ensureSiteFlag(*site)
-	db, _, err := extension.OpenDB()
+	path, err := wafStorePath()
+	if err != nil {
+		return err
+	}
+	db, err := openWafSQLite(path)
 	if err != nil {
 		return err
 	}
 	table := bansTableName()
+	_ = db.Table(table).AutoMigrate(&banRow{})
 	if *all {
 		res := db.Table(table).Where("1 = 1").Delete(&banRow{})
 		if res.Error != nil {

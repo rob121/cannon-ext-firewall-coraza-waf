@@ -21,11 +21,15 @@ func (app *firewallApp) admin(req extension.WireRequest) extension.WireResponse 
 	if !adminCanView(req) {
 		return extension.Error(http.StatusForbidden, "permission denied")
 	}
-	db, err := app.db()
+	db, err := app.siteDB()
 	if err != nil {
 		return extension.Error(http.StatusInternalServerError, err.Error())
 	}
 	if err := app.migrateTables(db); err != nil {
+		return extension.Error(http.StatusInternalServerError, err.Error())
+	}
+	wafDB, err := app.wafDB()
+	if err != nil {
 		return extension.Error(http.StatusInternalServerError, err.Error())
 	}
 
@@ -43,7 +47,7 @@ func (app *firewallApp) admin(req extension.WireRequest) extension.WireResponse 
 
 	switch {
 	case len(parts) == 0:
-		return app.adminHome(db, basePath, notice, errMsg, csrf, canManage)
+		return app.adminHome(db, wafDB, basePath, notice, errMsg, csrf, canManage)
 	case len(parts) == 1 && parts[0] == "rules":
 		return app.listRulesAdmin(db, adminURL, basePath, notice, errMsg, csrf, canManage)
 	case len(parts) == 2 && parts[0] == "rules" && parts[1] == "new":
@@ -123,7 +127,7 @@ func (app *firewallApp) admin(req extension.WireRequest) extension.WireResponse 
 		}
 		return extension.Redirect(http.StatusSeeOther, basePath+"?notice="+url.QueryEscape("WAF engine rebuilt."))
 	case len(parts) == 1 && parts[0] == "events":
-		return app.listEventsAdmin(db, adminURL, basePath, notice, errMsg, csrf, canManage)
+		return app.listEventsAdmin(wafDB, adminURL, basePath, notice, errMsg, csrf, canManage)
 	case len(parts) == 2 && parts[0] == "events" && parts[1] == "cleanup":
 		if !canManage {
 			return extension.Error(http.StatusForbidden, "permission denied")
@@ -138,7 +142,7 @@ func (app *firewallApp) admin(req extension.WireRequest) extension.WireResponse 
 		msg := fmt.Sprintf("Cleanup removed %d event(s) and %d expired ban(s).", eventsDeleted, bansDeleted)
 		return extension.Redirect(http.StatusSeeOther, basePath+"/events?notice="+url.QueryEscape(msg))
 	case len(parts) == 1 && parts[0] == "bans":
-		return app.listBansAdmin(db, basePath, notice, csrf, canManage)
+		return app.listBansAdmin(wafDB, basePath, notice, csrf, canManage)
 	case len(parts) == 2 && parts[0] == "bans" && parts[1] == "unban":
 		if !canManage {
 			return extension.Error(http.StatusForbidden, "permission denied")
@@ -154,13 +158,13 @@ func (app *firewallApp) admin(req extension.WireRequest) extension.WireResponse 
 	}
 }
 
-func (app *firewallApp) adminHome(db *gorm.DB, basePath, notice, errMsg string, csrf template.HTML, canManage bool) extension.WireResponse {
+func (app *firewallApp) adminHome(db, wafDB *gorm.DB, basePath, notice, errMsg string, csrf template.HTML, canManage bool) extension.WireResponse {
 	cfg, _ := app.loadSettings()
 	var ruleTotal, ruleEnabled, eventTotal, banTotal int64
 	_ = db.Table(app.rulesTable).Count(&ruleTotal).Error
 	_ = db.Table(app.rulesTable).Where("enabled = ?", true).Count(&ruleEnabled).Error
-	_ = db.Table(app.eventsTable).Count(&eventTotal).Error
-	_ = db.Table(app.bansTable).Where("expires_at > ?", time.Now().UTC()).Count(&banTotal).Error
+	_ = wafDB.Table(app.eventsTable).Count(&eventTotal).Error
+	_ = wafDB.Table(app.bansTable).Where("expires_at > ?", time.Now().UTC()).Count(&banTotal).Error
 	engReady := app.currentEngine() != nil
 	return app.render("firewall/admin_home.html", map[string]any{
 		"Title":        "Coraza WAF",

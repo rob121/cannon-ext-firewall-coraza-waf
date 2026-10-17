@@ -51,7 +51,7 @@ func listCRSFiles() ([]string, error) {
 }
 
 func (app *firewallApp) rebuildEngine() error {
-	db, err := app.db()
+	db, err := app.siteDB()
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (app *firewallApp) preloadCRS() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	db, err := app.db()
+	db, err := app.siteDB()
 	if err != nil {
 		return 0, err
 	}

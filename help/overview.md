@@ -44,9 +44,11 @@ Deleting a ban row (CLI or SQL) takes effect on the next request without restart
 
 After rule or settings changes the engine rebuilds automatically (or use **Rebuild Engine**).
 
-## Events retention
+## Events retention & disk store
 
-Events are stored in `firewall_coraza_waf_events`. **Event Retention (days)** (default `30`, `0` = keep forever) deletes older rows on an hourly background pass and opportunistically after new events. Expired IP bans are always removed. Use **Run cleanup now** on the Events page to purge immediately.
+Events and IP bans are stored in a dedicated SQLite file next to the site database: `firewall_coraza_waf.sqlite`. The request path keeps bans in memory and queues events for bulk flush (about every 250ms or 128 rows) so WAF traffic does not contend with the main site database.
+
+**Event Retention (days)** (default `30`, `0` = keep forever) deletes older event rows on an hourly background pass and opportunistically after flushes. Expired IP bans are always removed. Use **Run cleanup now** on the Events page to purge immediately.
 
 ## Request pipeline
 

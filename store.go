@@ -68,8 +68,16 @@ type configStore struct {
 	app   *firewallApp
 }
 
-func (s configStore) Load(section string) (map[string]any, error) {
+func (s configStore) openSiteDB() (*gorm.DB, error) {
+	if s.app != nil {
+		return s.app.siteDB()
+	}
 	db, _, err := extension.OpenDB()
+	return db, err
+}
+
+func (s configStore) Load(section string) (map[string]any, error) {
+	db, err := s.openSiteDB()
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +85,7 @@ func (s configStore) Load(section string) (map[string]any, error) {
 }
 
 func (s configStore) Save(section string, data map[string]any) error {
-	db, _, err := extension.OpenDB()
+	db, err := s.openSiteDB()
 	if err != nil {
 		return err
 	}
@@ -89,30 +97,18 @@ func (s configStore) Save(section string, data map[string]any) error {
 		return err
 	}
 	if s.app != nil {
+		s.app.InvalidateSettingsCache()
 		_ = s.app.rebuildEngine()
 	}
 	return nil
 }
 
-func (app *firewallApp) db() (*gorm.DB, error) {
-	if app.testDB != nil {
-		return app.testDB, nil
-	}
-	db, _, err := extension.OpenDB()
-	return db, err
-}
-
+// migrateTables migrates settings/rules on the site DB. Events/bans live in the WAF disk store.
 func (app *firewallApp) migrateTables(db *gorm.DB) error {
 	if err := extension.MigrateConfigurationStore(db, app.settingsTable); err != nil {
 		return err
 	}
-	if err := db.Table(app.rulesTable).AutoMigrate(&ruleRow{}); err != nil {
-		return err
-	}
-	if err := db.Table(app.eventsTable).AutoMigrate(&eventRow{}); err != nil {
-		return err
-	}
-	return db.Table(app.bansTable).AutoMigrate(&banRow{})
+	return db.Table(app.rulesTable).AutoMigrate(&ruleRow{})
 }
 
 func defaultFirewallSettings() firewallSettings {
@@ -131,25 +127,37 @@ func defaultFirewallSettings() firewallSettings {
 }
 
 func (app *firewallApp) loadSettings() (firewallSettings, error) {
-	data, err := (configStore{table: app.settingsTable}).Load("general")
+	app.settingsMu.RLock()
+	if app.settingsCached {
+		cfg := app.settingsCache
+		app.settingsMu.RUnlock()
+		return cfg, nil
+	}
+	app.settingsMu.RUnlock()
+
+	data, err := (configStore{table: app.settingsTable, app: app}).Load("general")
 	if err != nil {
 		return firewallSettings{}, err
 	}
 	cfg := defaultFirewallSettings()
-	if len(data) == 0 {
-		return cfg.normalized(), nil
+	if len(data) > 0 {
+		// Configuration forms often POST blank number fields as "". Drop those so
+		// defaults remain instead of failing JSON unmarshal into int fields.
+		sanitizeSettingsMap(data)
+		raw, err := json.Marshal(data)
+		if err != nil {
+			return firewallSettings{}, err
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return firewallSettings{}, err
+		}
 	}
-	// Configuration forms often POST blank number fields as "". Drop those so
-	// defaults remain instead of failing JSON unmarshal into int fields.
-	sanitizeSettingsMap(data)
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return firewallSettings{}, err
-	}
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return firewallSettings{}, err
-	}
-	return cfg.normalized(), nil
+	cfg = cfg.normalized()
+	app.settingsMu.Lock()
+	app.settingsCache = cfg
+	app.settingsCached = true
+	app.settingsMu.Unlock()
+	return cfg, nil
 }
 
 func sanitizeSettingsMap(data map[string]any) {
@@ -235,16 +243,6 @@ func (app *firewallApp) listRules(db *gorm.DB) ([]ruleRow, error) {
 	return rows, err
 }
 
-func (app *firewallApp) logEvent(ev eventRow) {
-	db, err := app.db()
-	if err != nil {
-		return
-	}
-	ev.CreatedAt = time.Now().UTC()
-	_ = db.Table(app.eventsTable).Create(&ev).Error
-	app.maybeCleanupRetention()
-}
-
 func (app *firewallApp) maybeCleanupRetention() {
 	const minInterval = 15 * time.Minute
 	app.mu.Lock()
@@ -263,7 +261,7 @@ func (app *firewallApp) runRetentionCleanup() (eventsDeleted, bansDeleted int64,
 	if err != nil {
 		return 0, 0, err
 	}
-	db, err := app.db()
+	db, err := app.wafDB()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -281,6 +279,14 @@ func (app *firewallApp) runRetentionCleanup() (eventsDeleted, bansDeleted int64,
 		return eventsDeleted, 0, res.Error
 	}
 	bansDeleted = res.RowsAffected
+	// Drop expired bans from the in-memory map too.
+	app.banMemo.Range(func(key, value any) bool {
+		exp, _ := value.(int64)
+		if exp <= now.Unix() {
+			app.banMemo.Delete(key)
+		}
+		return true
+	})
 	return eventsDeleted, bansDeleted, nil
 }
 

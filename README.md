@@ -10,6 +10,7 @@ Cannon extension wrapping [OWASP Coraza](https://www.coraza.io/) / [coraza](http
 - Modes: `disabled`, `passthru` (log only), `enforce` (block)
 - Optional IP ban timeout after enforce blocks
 - Event log and active ban list
+- Dedicated on-disk WAF store (`firewall_coraza_waf.sqlite`) with in-memory bans + bulk event flush
 - Event retention / cleanup (default 30 days)
 - CLI `list-bans` / `unban` for emergency unblock
 
@@ -30,4 +31,4 @@ go build -o /path/to/cannon/extensions/cannon-ext-firewall-coraza-waf .
 
 ## Version
 
-`0.1.4`
+`0.2.0`

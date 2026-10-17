@@ -27,7 +27,7 @@ const (
 	extensionName        = "cannon-ext-firewall-coraza-waf"
 	extensionTitle       = "Coraza WAF"
 	extensionDescription = "OWASP Coraza web application firewall with CRS v4, admin rule management, IP bans, and passthru mode."
-	extensionVersion     = "0.1.4"
+	extensionVersion     = "0.2.0"
 	updateURLBase        = "https://github.com/rob121/cannon-ext-firewall-coraza-waf/releases/download"
 	defaultAdminMenu     = "Firewall"
 	pageSize             = 25
@@ -158,8 +158,22 @@ type firewallApp struct {
 	mu              sync.RWMutex
 	engine          *wafEngine
 	banMemo         sync.Map // ip -> unix expiry
+	banRecheckAt    sync.Map // ip -> unix last disk recheck
+	bannedLogAt     sync.Map // ip -> unix last banned event log
 	lastRetentionAt time.Time
 	testDB          *gorm.DB // optional; used by unit tests
+
+	siteDBmu     sync.Mutex
+	siteDBConn   *gorm.DB
+	wafDBmu      sync.Mutex
+	wafDBConn    *gorm.DB
+	wafStorePath string
+
+	settingsMu     sync.RWMutex
+	settingsCache  firewallSettings
+	settingsCached bool
+
+	eventCh chan eventRow
 }
 
 func main() {
@@ -215,16 +229,20 @@ func newServer() (*firewallApp, *extension.Server) {
 
 	s.HandleRequest("/request", app.handleRequest)
 	s.HandleAdmin("/admin/", app.admin)
+	app.startDiskWorkers()
 	app.startRetentionLoop()
 	return app, s
 }
 
 func (app *firewallApp) install(req extension.WireRequest) error {
-	db, _, err := extension.OpenDB()
+	db, err := app.siteDB()
 	if err != nil {
 		return err
 	}
 	if err := app.migrateTables(db); err != nil {
+		return err
+	}
+	if _, err := app.wafDB(); err != nil {
 		return err
 	}
 	return app.rebuildEngine()

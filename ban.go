@@ -12,33 +12,47 @@ func (app *firewallApp) isBanned(ip string) (bool, time.Time) {
 	if ip == "" {
 		return false, time.Time{}
 	}
+	now := time.Now().Unix()
 	if v, ok := app.banMemo.Load(ip); ok {
 		exp, _ := v.(int64)
-		if exp <= time.Now().Unix() {
+		if exp <= now {
 			app.banMemo.Delete(ip)
-		} else {
-			// Recheck DB so CLI/SQL unban clears the ban without restarting this process.
-			db, err := app.db()
-			if err != nil {
-				return true, time.Unix(exp, 0).UTC()
-			}
-			var row banRow
-			err = db.Table(app.bansTable).Where("ip = ? AND expires_at > ?", ip, time.Now().UTC()).First(&row).Error
-			if err != nil {
-				app.banMemo.Delete(ip)
-				return false, time.Time{}
-			}
-			app.banMemo.Store(ip, row.ExpiresAt.Unix())
-			return true, row.ExpiresAt.UTC()
+			return false, time.Time{}
+		}
+		// Trust memory on the hot path; periodically recheck disk so CLI unban works.
+		if app.shouldRecheckBan(ip, now) {
+			return app.recheckBanOnDisk(ip)
+		}
+		return true, time.Unix(exp, 0).UTC()
+	}
+	return app.recheckBanOnDisk(ip)
+}
+
+func (app *firewallApp) shouldRecheckBan(ip string, now int64) bool {
+	if v, ok := app.banRecheckAt.Load(ip); ok {
+		if last, _ := v.(int64); now-last < int64(banRecheckInterval/time.Second) {
+			return false
 		}
 	}
-	db, err := app.db()
+	return true
+}
+
+func (app *firewallApp) recheckBanOnDisk(ip string) (bool, time.Time) {
+	app.banRecheckAt.Store(ip, time.Now().Unix())
+	db, err := app.wafDB()
 	if err != nil {
+		if v, ok := app.banMemo.Load(ip); ok {
+			exp, _ := v.(int64)
+			if exp > time.Now().Unix() {
+				return true, time.Unix(exp, 0).UTC()
+			}
+		}
 		return false, time.Time{}
 	}
 	var row banRow
 	err = db.Table(app.bansTable).Where("ip = ? AND expires_at > ?", ip, time.Now().UTC()).First(&row).Error
 	if err != nil {
+		app.banMemo.Delete(ip)
 		return false, time.Time{}
 	}
 	app.banMemo.Store(ip, row.ExpiresAt.Unix())
@@ -52,7 +66,11 @@ func (app *firewallApp) banIP(ip, reason string, seconds int) {
 	}
 	exp := time.Now().UTC().Add(time.Duration(seconds) * time.Second)
 	app.banMemo.Store(ip, exp.Unix())
-	db, err := app.db()
+	go app.persistBan(ip, reason, exp)
+}
+
+func (app *firewallApp) persistBan(ip, reason string, exp time.Time) {
+	db, err := app.wafDB()
 	if err != nil {
 		return
 	}
@@ -77,7 +95,8 @@ func (app *firewallApp) banIP(ip, reason string, seconds int) {
 func (app *firewallApp) unbanIP(ip string) error {
 	ip = strings.TrimSpace(ip)
 	app.banMemo.Delete(ip)
-	db, err := app.db()
+	app.banRecheckAt.Delete(ip)
+	db, err := app.wafDB()
 	if err != nil {
 		return err
 	}
