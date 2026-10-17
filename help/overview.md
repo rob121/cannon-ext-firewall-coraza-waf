@@ -10,9 +10,15 @@
 | `passthru` | Inspect and log `would_block` events, but never stop the request |
 | `enforce` | Block interrupted requests (default HTTP 403) and optionally ban the client IP |
 
-Configure mode, ban duration, anomaly thresholds, paranoia level, path exclusions, and event retention under **Firewall Settings**.
+Configure mode, ban duration, anomaly thresholds, paranoia level, path exclusions, event retention, and **Async Ban** under **Firewall Settings**.
 
 **Cost warning:** `enforce` runs CRS on every request that is not excluded. Combined with Cannon’s synchronous extension IPC, this can dominate CPU on a small host with several sites. Tune in `passthru` first, keep path excludes broad, leave RESPONSE-* packs disabled, and treat enforce as an edge/proxy-grade setting—not a default for every site.
+
+## Async Ban
+
+When **Async Ban** is enabled (and mode is not `disabled`), the hot path only does excludes + the IP ban list, then returns immediately. Full CRS runs in a background worker. If CRS would interrupt, the client IP is banned for later requests (`async_ban_seconds`, or `ban_seconds` when that is 0).
+
+**Security caveat:** the first malicious request is not CRS-blocked—it may reach the application. Use sync `enforce` when you need that request stopped. Async Ban trades first-request protection for lower latency under load. Already-banned IPs are still blocked synchronously in `enforce`. If both ban durations are 0, async only logs `would_block`-style events.
 
 ## Setup
 

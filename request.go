@@ -52,14 +52,29 @@ func (app *firewallApp) handleRequest(req extension.WireRequest) extension.WireR
 		return app.blockResponse(cfg, "Your IP is temporarily banned.")
 	}
 
-	eng, err := app.ensureEngine()
-	if err != nil || eng == nil {
-		return extension.OK()
-	}
-
 	body := req.Body
 	if cfg.MaxBodyBytes > 0 && len(body) > cfg.MaxBodyBytes {
 		body = body[:cfg.MaxBodyBytes]
+	}
+
+	if cfg.AsyncBan {
+		app.enqueueAsyncInspect(asyncInspectJob{
+			Method:      req.Method,
+			URL:         req.URL,
+			Header:      copyHeaderMap(req.Header),
+			Body:        body,
+			ClientIP:    clientIP,
+			Path:        path,
+			Mode:        cfg.Mode,
+			BanSeconds:  cfg.asyncBanDuration(),
+			BlockStatus: cfg.BlockStatus,
+		})
+		return extension.OK()
+	}
+
+	eng, err := app.ensureEngine()
+	if err != nil || eng == nil {
+		return extension.OK()
 	}
 
 	result := inspectRequest(eng, req.Method, req.URL, req.Header, body, clientIP)

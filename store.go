@@ -27,6 +27,9 @@ type firewallSettings struct {
 	ExcludePaths             string `json:"exclude_paths"`
 	MaxBodyBytes             int    `json:"max_body_bytes"`
 	EventRetentionDays       int    `json:"event_retention_days"`
+	AsyncBan                 bool   `json:"async_ban"`
+	AsyncBanSeconds          int    `json:"async_ban_seconds"`
+	AsyncBanQueue            int    `json:"async_ban_queue"`
 }
 
 type ruleRow struct {
@@ -44,7 +47,7 @@ type ruleRow struct {
 
 type eventRow struct {
 	ID        uint      `gorm:"primaryKey;column:event_id"`
-	Action    string    `gorm:"column:action;size:32;not null;index"` // blocked | would_block | banned
+	Action    string    `gorm:"column:action;size:32;not null;index"` // blocked | would_block | banned | async_ban | async_drop
 	Mode      string    `gorm:"column:mode;size:32"`
 	Method    string    `gorm:"column:method;size:16"`
 	Path      string    `gorm:"column:path;size:1024"`
@@ -127,7 +130,18 @@ func defaultFirewallSettings() firewallSettings {
 		ExcludePaths:             defaultExcludePaths,
 		MaxBodyBytes:             131072,
 		EventRetentionDays:       30,
+		AsyncBan:                 false,
+		AsyncBanSeconds:          0,
+		AsyncBanQueue:            256,
 	}
+}
+
+// asyncBanDuration returns seconds to ban after an async CRS hit (0 = no ban).
+func (cfg firewallSettings) asyncBanDuration() int {
+	if cfg.AsyncBanSeconds > 0 {
+		return cfg.AsyncBanSeconds
+	}
+	return cfg.BanSeconds
 }
 
 func (app *firewallApp) loadSettings() (firewallSettings, error) {
@@ -225,6 +239,12 @@ func (cfg firewallSettings) normalized() firewallSettings {
 	}
 	if cfg.EventRetentionDays < 0 {
 		cfg.EventRetentionDays = 0
+	}
+	if cfg.AsyncBanSeconds < 0 {
+		cfg.AsyncBanSeconds = 0
+	}
+	if cfg.AsyncBanQueue < 1 {
+		cfg.AsyncBanQueue = 256
 	}
 	return cfg
 }

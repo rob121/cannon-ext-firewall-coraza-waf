@@ -27,7 +27,7 @@ const (
 	extensionName        = "cannon-ext-firewall-coraza-waf"
 	extensionTitle       = "Coraza WAF"
 	extensionDescription = "OWASP Coraza web application firewall with CRS v4, admin rule management, IP bans, and passthru mode."
-	extensionVersion     = "0.2.1"
+	extensionVersion     = "0.2.2"
 	updateURLBase        = "https://github.com/rob121/cannon-ext-firewall-coraza-waf/releases/download"
 	defaultAdminMenu     = "Firewall"
 	pageSize             = 25
@@ -114,6 +114,26 @@ func firewallConfigSchema() json.RawMessage {
 				"default":     d.EventRetentionDays,
 				"minimum":     0,
 			},
+			"async_ban": map[string]any{
+				"type":        "boolean",
+				"title":       "Async Ban",
+				"description": "Run full CRS off the request path and ban the IP for later requests when a hit is found. Does not block the current request (first malicious hit may reach the app). Sync ban-list checks still apply.",
+				"default":     d.AsyncBan,
+			},
+			"async_ban_seconds": map[string]any{
+				"type":        "integer",
+				"title":       "Async Ban Duration (seconds)",
+				"description": "Ban length after an async CRS hit. Leave blank or 0 to use Ban Duration (" + itoa(d.BanSeconds) + "). Set both to 0 to only log.",
+				"default":     d.AsyncBanSeconds,
+				"minimum":     0,
+			},
+			"async_ban_queue": map[string]any{
+				"type":        "integer",
+				"title":       "Async Ban Queue Size",
+				"description": "Max pending CRS inspections. When full, new jobs are dropped (logged). Leave blank for " + itoa(d.AsyncBanQueue) + ".",
+				"default":     d.AsyncBanQueue,
+				"minimum":     1,
+			},
 		},
 	}
 	raw, err := json.Marshal(doc)
@@ -136,7 +156,12 @@ var firewallConfigUI = json.RawMessage(`{
     {"type": "Control", "scope": "#/properties/exclude_admin"},
     {"type": "Control", "scope": "#/properties/exclude_paths", "options": {"multi": true}},
     {"type": "Control", "scope": "#/properties/max_body_bytes"},
-    {"type": "Control", "scope": "#/properties/event_retention_days"}
+    {"type": "Control", "scope": "#/properties/event_retention_days"},
+    {"type": "Group", "label": "Async Ban", "elements": [
+      {"type": "Control", "scope": "#/properties/async_ban"},
+      {"type": "Control", "scope": "#/properties/async_ban_seconds"},
+      {"type": "Control", "scope": "#/properties/async_ban_queue"}
+    ]}
   ]
 }`)
 
@@ -172,6 +197,12 @@ type firewallApp struct {
 	settingsCached bool
 
 	eventCh chan eventRow
+
+	asyncCh      chan asyncInspectJob
+	asyncOnce    sync.Once
+	asyncDropAt  sync.Map // rate-limit async_drop logs
+	asyncWorkers int
+	asyncPending int32 // accepted jobs not yet finished (tests + idle wait)
 }
 
 func main() {
@@ -229,6 +260,7 @@ func newServer() (*firewallApp, *extension.Server) {
 	s.HandleAdmin("/admin/", app.admin)
 	app.startDiskWorkers()
 	app.startRetentionLoop()
+	app.startAsyncWorkers()
 	return app, s
 }
 
