@@ -1,0 +1,80 @@
+{{if .Notice}}<div class="admin-alert admin-alert-success">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="admin-alert admin-alert-danger">{{.Error}}</div>{{end}}
+
+<div class="fw-admin">
+  <div class="fw-admin-toolbar">
+    <div class="admin-page-actions">
+      <a class="btn-admin-outline" href="{{.BasePath}}" data-turbo-frame="_top"><i class="bi bi-arrow-left"></i> Overview</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/rules" data-turbo-frame="_top">All</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/rules?kind=file" data-turbo-frame="_top">CRS files</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/rules?kind=remove_id" data-turbo-frame="_top">Disabled IDs</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/rules?kind=custom" data-turbo-frame="_top">Custom</a>
+    </div>
+    {{if .CanManage}}
+    <a class="btn-admin-primary" href="{{.BasePath}}/rules/new" data-turbo-frame="_top"><i class="bi bi-plus-lg"></i> Add Override</a>
+    {{end}}
+  </div>
+
+  <div class="admin-data-card">
+    <div class="admin-data-card-header">
+      <div class="admin-data-card-summary-main">
+        <h2 class="admin-data-card-title">{{.Title}}</h2>
+        <p class="admin-data-card-desc">{{.Subtitle}}</p>
+      </div>
+    </div>
+    <div class="admin-table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>Key / File</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th class="admin-col-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+          <tr>
+            <td><code class="admin-code">{{.Kind}}</code></td>
+            <td><code class="admin-code">{{.Key}}</code></td>
+            <td>{{.Title}}</td>
+            <td>{{if .Enabled}}Enabled{{else}}Disabled{{end}}</td>
+            <td class="admin-col-actions">
+              <div class="admin-row-actions">
+                {{if $.CanManage}}
+                <form method="post" action="{{$.BasePath}}/rules/{{.ID}}/toggle" class="admin-inline-form">
+                  {{$.CSRFField}}
+                  <button type="submit" class="btn-admin-icon" title="Toggle"><i class="bi bi-toggle-{{if .Enabled}}on{{else}}off{{end}}"></i></button>
+                </form>
+                {{if ne .Kind "file"}}
+                <a class="btn-admin-icon" href="{{$.BasePath}}/rules/{{.ID}}" data-turbo-frame="_top" title="Edit"><i class="bi bi-pencil"></i></a>
+                <form method="post" action="{{$.BasePath}}/rules/{{.ID}}/delete" class="admin-inline-form" onsubmit="return confirm('Remove this rule entry?')">
+                  {{$.CSRFField}}
+                  <button type="submit" class="btn-admin-icon btn-admin-icon-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                </form>
+                {{end}}
+                {{end}}
+              </div>
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="5" class="admin-table-empty-cell">
+              <div class="admin-empty-state">
+                <div class="admin-empty-state-title">No rules loaded</div>
+                <p class="admin-empty-state-desc">Preload CRS from the overview page, or add a custom override.</p>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .admin-extension-app .fw-admin { display:flex; flex-direction:column; gap:1.5rem; }
+  .admin-extension-app .fw-admin-toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.75rem 1rem; }
+</style>

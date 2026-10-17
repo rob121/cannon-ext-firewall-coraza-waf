@@ -1,0 +1,58 @@
+{{if .Notice}}<div class="admin-alert admin-alert-success">{{.Notice}}</div>{{end}}
+
+<div class="fw-admin">
+  <div class="fw-admin-toolbar">
+    <a class="btn-admin-outline" href="{{.BasePath}}" data-turbo-frame="_top"><i class="bi bi-arrow-left"></i> Overview</a>
+  </div>
+  <div class="admin-data-card">
+    <div class="admin-data-card-header">
+      <div class="admin-data-card-summary-main">
+        <h2 class="admin-data-card-title">{{.Title}}</h2>
+        <p class="admin-data-card-desc">{{.Subtitle}}</p>
+      </div>
+    </div>
+    <div class="admin-table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>Expires</th>
+            <th>Reason</th>
+            <th class="admin-col-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+          <tr>
+            <td><code class="admin-code">{{.IP}}</code></td>
+            <td>{{.ExpiresAt.Format "2006-01-02 15:04:05"}}</td>
+            <td style="max-width:24rem;white-space:normal">{{.Reason}}</td>
+            <td class="admin-col-actions">
+              {{if $.CanManage}}
+              <form method="post" action="{{$.BasePath}}/bans/unban" class="admin-inline-form">
+                {{$.CSRFField}}
+                <input type="hidden" name="ip" value="{{.IP}}">
+                <button type="submit" class="btn-admin-icon btn-admin-icon-danger" title="Unban"><i class="bi bi-x-lg"></i></button>
+              </form>
+              {{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="4" class="admin-table-empty-cell">
+              <div class="admin-empty-state">
+                <div class="admin-empty-state-title">No active bans</div>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .admin-extension-app .fw-admin { display:flex; flex-direction:column; gap:1.5rem; }
+  .admin-extension-app .fw-admin-toolbar { display:flex; flex-wrap:wrap; gap:.75rem; }
+</style>

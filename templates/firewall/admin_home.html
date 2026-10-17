@@ -1,0 +1,67 @@
+{{if .Notice}}<div class="admin-alert admin-alert-success">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="admin-alert admin-alert-danger">{{.Error}}</div>{{end}}
+
+<div class="fw-admin">
+  <div class="fw-admin-toolbar">
+    <div class="admin-page-actions">
+      <a class="btn-admin-outline" href="{{.SettingsURL}}" data-turbo-frame="_top"><i class="bi bi-sliders"></i> Settings</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/rules" data-turbo-frame="_top"><i class="bi bi-shield"></i> Rules</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/events" data-turbo-frame="_top"><i class="bi bi-journal-text"></i> Events</a>
+      <a class="btn-admin-outline" href="{{.BasePath}}/bans" data-turbo-frame="_top"><i class="bi bi-slash-circle"></i> Bans</a>
+    </div>
+    {{if .CanManage}}
+    <div class="admin-page-actions">
+      <form method="post" action="{{.BasePath}}/preload" class="admin-inline-form">
+        {{.CSRFField}}
+        <button type="submit" class="btn-admin-primary"><i class="bi bi-download"></i> Preload CRS {{.CRSVersion}}</button>
+      </form>
+      <form method="post" action="{{.BasePath}}/rebuild" class="admin-inline-form">
+        {{.CSRFField}}
+        <button type="submit" class="btn-admin-outline"><i class="bi bi-arrow-repeat"></i> Rebuild Engine</button>
+      </form>
+    </div>
+    {{end}}
+  </div>
+
+  <div class="admin-stats">
+    <div class="admin-stat-card">
+      <div class="admin-stat-card-top"><span class="admin-stat-label">Mode</span></div>
+      <div class="admin-stat-value" style="font-size:1.35rem;text-transform:capitalize">{{.Mode}}</div>
+      <div class="admin-stat-foot"><span class="admin-stat-badge admin-stat-badge-neutral">ban {{.BanSeconds}}s</span></div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-card-top"><span class="admin-stat-label">Rules</span></div>
+      <div class="admin-stat-value">{{.RuleEnabled}}</div>
+      <div class="admin-stat-foot"><span class="admin-stat-badge admin-stat-badge-neutral">{{.RuleTotal}} total</span></div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-card-top"><span class="admin-stat-label">Events</span></div>
+      <div class="admin-stat-value">{{.EventTotal}}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-card-top"><span class="admin-stat-label">Active Bans</span></div>
+      <div class="admin-stat-value">{{.BanTotal}}</div>
+    </div>
+  </div>
+
+  <div class="admin-data-card">
+    <div class="admin-data-card-header">
+      <div class="admin-data-card-summary-main">
+        <h2 class="admin-data-card-title">Getting started</h2>
+        <p class="admin-data-card-desc">Powered by <a href="https://www.coraza.io/" target="_blank" rel="noopener">OWASP Coraza</a> and CRS {{.CRSVersion}}. Engine {{if .EngineReady}}ready{{else}}not built yet{{end}}.</p>
+      </div>
+    </div>
+    <ol class="fw-admin-steps">
+      <li><strong>Preload CRS</strong> — import the latest OWASP Core Rule Set v4 rule files.</li>
+      <li><strong>Choose mode</strong> — start with <code class="admin-code">passthru</code> to log detections without blocking, then switch to <code class="admin-code">enforce</code>.</li>
+      <li><strong>Tune rules</strong> — disable noisy files or specific rule IDs from the Rules page.</li>
+    </ol>
+  </div>
+</div>
+
+<style>
+  .admin-extension-app .fw-admin { display:flex; flex-direction:column; gap:1.5rem; }
+  .admin-extension-app .fw-admin-toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.75rem 1rem; }
+  .admin-extension-app .fw-admin-steps { margin:0; padding:1.25rem 1.5rem 1.5rem 2.25rem; }
+  .admin-extension-app .fw-admin-steps li + li { margin-top:.75rem; }
+</style>

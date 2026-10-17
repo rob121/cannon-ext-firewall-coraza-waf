@@ -1,0 +1,62 @@
+{{if .Notice}}<div class="admin-alert admin-alert-success">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="admin-alert admin-alert-danger">{{.Error}}</div>{{end}}
+
+<div class="fw-admin">
+  <div class="fw-admin-toolbar">
+    <a class="btn-admin-outline" href="{{.BasePath}}" data-turbo-frame="_top"><i class="bi bi-arrow-left"></i> Overview</a>
+    {{if .CanManage}}
+    <form method="post" action="{{.BasePath}}/events/cleanup" class="admin-inline-form">
+      {{.CSRFField}}
+      <button type="submit" class="btn-admin-outline"><i class="bi bi-trash"></i> Run cleanup now</button>
+    </form>
+    {{end}}
+  </div>
+  <div class="admin-data-card">
+    <div class="admin-data-card-header">
+      <div class="admin-data-card-summary-main">
+        <h2 class="admin-data-card-title">{{.Title}}</h2>
+        <p class="admin-data-card-desc">{{.Subtitle}}</p>
+      </div>
+    </div>
+    <div class="admin-table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Action</th>
+            <th>IP</th>
+            <th>Request</th>
+            <th>Rules</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+          <tr>
+            <td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+            <td><code class="admin-code">{{.Action}}</code></td>
+            <td>{{.ClientIP}}</td>
+            <td>{{.Method}} {{.Path}}</td>
+            <td><code class="admin-code">{{.RuleIDs}}</code></td>
+            <td style="max-width:20rem;white-space:normal">{{.Messages}}</td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="6" class="admin-table-empty-cell">
+              <div class="admin-empty-state">
+                <div class="admin-empty-state-title">No events yet</div>
+                <p class="admin-empty-state-desc">Detections appear here in passthru or enforce mode.</p>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .admin-extension-app .fw-admin { display:flex; flex-direction:column; gap:1.5rem; }
+  .admin-extension-app .fw-admin-toolbar { display:flex; flex-wrap:wrap; gap:.75rem; }
+</style>

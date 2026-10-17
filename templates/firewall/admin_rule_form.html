@@ -1,0 +1,47 @@
+{{if .Error}}<div class="admin-alert admin-alert-danger">{{.Error}}</div>{{end}}
+
+<div class="fw-admin">
+  <div class="fw-admin-toolbar">
+    <a class="btn-admin-outline" href="{{.CancelURL}}" data-turbo-frame="_top"><i class="bi bi-arrow-left"></i> Back to Rules</a>
+  </div>
+  <div class="admin-data-card">
+    <div class="admin-data-card-header">
+      <div class="admin-data-card-summary-main">
+        <h2 class="admin-data-card-title">{{.Title}}</h2>
+        <p class="admin-data-card-desc">{{.Subtitle}}</p>
+      </div>
+    </div>
+    <form method="post" action="{{.ActionURL}}" class="admin-form" style="padding:1.25rem 1.5rem 1.5rem">
+      {{.CSRFField}}
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="admin-form-label">Kind</label>
+          <select class="admin-form-control" name="kind" required>
+            {{range $.Kinds}}
+            <option value="{{.}}" {{if eq $.Row.Kind .}}selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="admin-form-label">Key / Rule ID</label>
+          <input class="admin-form-control" name="key" value="{{.Row.Key}}" placeholder="941100 or custom-name" required>
+        </div>
+        <div class="col-md-4">
+          <label class="admin-form-label">Title</label>
+          <input class="admin-form-control" name="title" value="{{.Row.Title}}">
+        </div>
+        <div class="col-12">
+          <label class="admin-form-label">Directives (custom only)</label>
+          <textarea class="admin-form-control" name="directives" rows="8" placeholder='SecRule REQUEST_URI "@contains /evil" "id:100001,phase:1,deny,status:403,msg:evil"'>{{.Row.Directives}}</textarea>
+        </div>
+        <div class="col-12">
+          <label class="admin-form-label"><input type="checkbox" name="enabled" value="1" {{if .Row.Enabled}}checked{{end}}> Enabled</label>
+        </div>
+      </div>
+      <div class="admin-form-actions" style="margin-top:1.25rem;display:flex;gap:.75rem">
+        <button type="submit" class="btn-admin-primary">Save</button>
+        <a class="btn-admin-outline" href="{{.CancelURL}}" data-turbo-frame="_top">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
