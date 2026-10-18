@@ -167,22 +167,22 @@ func (app *firewallApp) adminHome(db, wafDB *gorm.DB, basePath, notice, errMsg s
 	_ = wafDB.Table(app.bansTable).Where("expires_at > ?", time.Now().UTC()).Count(&banTotal).Error
 	engReady := app.currentEngine() != nil
 	return app.render("firewall/admin_home.html", map[string]any{
-		"Title":        "Coraza WAF",
-		"Subtitle":     "OWASP Coraza with CRS " + crsVersion(),
-		"BasePath":     basePath,
-		"SettingsURL":  "/admin/configuration/extensions/" + url.PathEscape(extensionName),
-		"Mode":         cfg.Mode,
-		"BanSeconds":   cfg.BanSeconds,
-		"RuleTotal":    ruleTotal,
-		"RuleEnabled":  ruleEnabled,
-		"EventTotal":   eventTotal,
-		"BanTotal":     banTotal,
-		"EngineReady":  engReady,
-		"CRSVersion":   crsVersion(),
-		"Notice":       notice,
-		"Error":        errMsg,
-		"CanManage":    canManage,
-		"CSRFField":    csrf,
+		"Title":       "Coraza WAF",
+		"Subtitle":    "OWASP Coraza with CRS " + crsVersion(),
+		"BasePath":    basePath,
+		"SettingsURL": "/admin/configuration/extensions/" + url.PathEscape(extensionName),
+		"Mode":        cfg.Mode,
+		"BanSeconds":  cfg.BanSeconds,
+		"RuleTotal":   ruleTotal,
+		"RuleEnabled": ruleEnabled,
+		"EventTotal":  eventTotal,
+		"BanTotal":    banTotal,
+		"EngineReady": engReady,
+		"CRSVersion":  crsVersion(),
+		"Notice":      notice,
+		"Error":       errMsg,
+		"CanManage":   canManage,
+		"CSRFField":   csrf,
 	})
 }
 

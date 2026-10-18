@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/corazawaf/coraza/v3"
 	corazaconf "github.com/corazawaf/coraza-coreruleset/coraza/v3"
 	crs "github.com/corazawaf/coraza-coreruleset/crs/v4"
+	"github.com/corazawaf/coraza/v3"
 	"github.com/jcchavezs/mergefs"
 )
 

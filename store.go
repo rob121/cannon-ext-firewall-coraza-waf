@@ -108,10 +108,14 @@ func (s configStore) Save(section string, data map[string]any) error {
 
 // migrateTables migrates settings/rules on the site DB. Events/bans live in the WAF disk store.
 func (app *firewallApp) migrateTables(db *gorm.DB) error {
-	if err := extension.MigrateConfigurationStore(db, app.settingsTable); err != nil {
-		return err
-	}
-	return db.Table(app.rulesTable).AutoMigrate(&ruleRow{})
+	app.schemaOnce.Do(func() {
+		app.schemaErr = extension.MigrateConfigurationStore(db, app.settingsTable)
+		if app.schemaErr != nil {
+			return
+		}
+		app.schemaErr = db.Table(app.rulesTable).AutoMigrate(&ruleRow{})
+	})
+	return app.schemaErr
 }
 
 // defaultExcludePaths skips static/theme traffic that should not pay CRS cost.

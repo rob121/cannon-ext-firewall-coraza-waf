@@ -27,7 +27,7 @@ const (
 	extensionName        = "cannon-ext-firewall-coraza-waf"
 	extensionTitle       = "Coraza WAF"
 	extensionDescription = "OWASP Coraza web application firewall with CRS v4, admin rule management, IP bans, and passthru mode."
-	extensionVersion     = "0.2.2"
+	extensionVersion     = "0.2.3"
 	updateURLBase        = "https://github.com/rob121/cannon-ext-firewall-coraza-waf/releases/download"
 	defaultAdminMenu     = "Firewall"
 	pageSize             = 25
@@ -203,6 +203,9 @@ type firewallApp struct {
 	asyncDropAt  sync.Map // rate-limit async_drop logs
 	asyncWorkers int
 	asyncPending int32 // accepted jobs not yet finished (tests + idle wait)
+
+	schemaOnce sync.Once
+	schemaErr  error
 }
 
 func main() {
