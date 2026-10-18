@@ -209,6 +209,13 @@ type firewallApp struct {
 }
 
 func main() {
+	if _, dataQuery := extension.DataArgKey(os.Args); dataQuery {
+		_, s := newServer()
+		if err := s.Run(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "unban", "list-bans":
@@ -218,7 +225,8 @@ func main() {
 			return
 		}
 	}
-	_, s := newServer()
+	app, s := newServer()
+	app.startBackground()
 	if err := s.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -261,10 +269,13 @@ func newServer() (*firewallApp, *extension.Server) {
 
 	s.HandleRequest("/request", app.handleRequest)
 	s.HandleAdmin("/admin/", app.admin)
+	return app, s
+}
+
+func (app *firewallApp) startBackground() {
 	app.startDiskWorkers()
 	app.startRetentionLoop()
 	app.startAsyncWorkers()
-	return app, s
 }
 
 func (app *firewallApp) install(req extension.WireRequest) error {
